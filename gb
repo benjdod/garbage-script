@@ -4,7 +4,21 @@ GB_BASE_DIR="${HOME}/.gb"
 GB_TRASH_DIR="${GB_BASE_DIR}/trash"
 GB_LOGFILE="${GB_BASE_DIR}/gb.log"
 
+LOG_LEVEL="DEBUG"
+
+function echo_debug {
+	if [ $LOG_LEVEL = "DEBUG" ]; then
+		echo $1
+	fi
+}
+
 function print_log {
+
+	if [ ! -s $GB_LOGFILE ]; then
+		echo "empty."
+		return 1
+	fi
+
 	if [ -n "$1" ];
 	then
 		tail -n $1 $GB_LOGFILE
@@ -13,16 +27,9 @@ function print_log {
 	fi
 }
 
-# TODO: add functionality to avoid filename collisions
-# e.g. `gb file.txt; touch file.txt; gb file.txt`
-# would step on the first version of file.txt
-#
-# would need an incremental scheme (f.txt, f-00001.txt)
-# or a hash-based solution with a map.
-# this would need to handle files with names of length
-# path_max
-
 function trash_single_file {
+
+	echo "trashing file $1"
 
 	if [ ! -e $1 ];
 	then
@@ -32,11 +39,59 @@ function trash_single_file {
 
 	TARGET_FILE="$(realpath $1)"
 
+	while true;
+	do
+		GB_FILE_HASH="$(echo \"$TARGET_FILE$RANDOM\" | md5sum | awk '{print $1}')"
 
-	echo "$(($(date +%s%N)/1000000)) $(whoami) $TARGET_FILE" >> "${GB_LOGFILE}"
+		if [ -z $(cat $GB_LOGFILE | grep $GB_FILE_HASH) ]; then
+			break
+		fi
+	done
 
-	mv $TARGET_FILE $GB_TRASH_DIR
+	echo "$GB_FILE_HASH $(($(date +%s%N)/1000000)) $(whoami) $TARGET_FILE" >> "${GB_LOGFILE}"
 
+	mv $TARGET_FILE "${GB_TRASH_DIR}/${GB_FILE_HASH}"
+}
+
+function restore_single_file {
+	# find file hash
+
+	echo "restoring file $1"
+
+	TARGET="$(cat $GB_LOGFILE | grep --color=none $(echo $1))"
+	TARGET_HASH="$(echo $TARGET | awk '{print $1}')"
+	TARGET_HASH_LC="$(echo $TARGET_HASH | wc -l)"
+
+	if [ $TARGET_HASH_LC -gt 1 ];
+	then
+		echo "multiple files matched argument, aborting..."
+		return 1
+	elif [ $TARGET_HASH_LC -lt 1 ];
+	then
+		echo "no files matched argument"
+		return 1
+	fi
+
+	DEST_FILENAME="$(echo $TARGET | awk '{print $4}')"
+	echo_debug "found hash and file: "
+	echo_debug "target: $TARGET"
+	echo_debug "hash: $TARGET_HASH"
+	echo_debug "file: $DEST_FILENAME"
+
+	if [ ! -d "$(dirname $DEST_FILENAME)" ]; then
+		"directory for trashed file $DEST_FILENAME does not exist"
+		return 1
+	fi
+
+	echo_debug "moving ${GB_TRASH_DIR}/${TARGET_HASH} to ${DEST_FILENAME}"
+	mv "${GB_TRASH_DIR}/${TARGET_HASH}" "${DEST_FILENAME}"
+	sed -i '/'"$TARGET_HASH"'/d' $GB_LOGFILE
+}
+
+function empty_trash {
+	rm -r $GB_TRASH_DIR && mkdir -p $GB_TRASH_DIR
+	rm $GB_LOGFILE && touch $GB_LOGFILE
+	echo "emptied trash."
 }
 
 ########################################
@@ -51,6 +106,7 @@ then
 fi
 
 while [ "$#" -gt 0 ]; do
+	echo "current arg with $# args left: $1"
 	case $1 in
 		-l|--log)
 			case $2 in
@@ -78,10 +134,33 @@ while [ "$#" -gt 0 ]; do
 			echo "not implemented"
 			exit 1
 			;;
-		*)
-			trash_single_file $1
+		--empty)
+			read -p "Are you absolutely positively sure? (y/n) " -n 1 -r
+			case "$REPLY" in
+				y|Y|yes)
+					echo ""
+					empty_trash
+					exit 0
+					;;
+				*)
+					exit 1
+					;;
+			esac
+			;;
+		-r|--restore)
+			restore_single_file $2
 			shift
+		#	shift
+			;;
+		*)
+			if [ -n $1 ];
+			then
+				trash_single_file $1
+			fi
+		#	shift
 			;;
 	esac
+	shift
 done
+
 exit 0
