@@ -29,12 +29,16 @@ function print_log {
 
 function trash_single_file {
 
-	echo "trashing file $1"
-
 	if [ ! -e $1 ];
 	then
 		echo "file or folder \"$1\" could not be found"
 		exit 1
+	fi
+
+	if [ -d $1 ]; then
+		echo_debug "trashing directory $1"
+	elif [ -f $1 ]; then
+		echo_debug "trashing file $1"
 	fi
 
 	TARGET_FILE="$(realpath $1)"
@@ -64,8 +68,11 @@ function restore_single_file {
 
 	if [ $TARGET_HASH_LC -gt 1 ];
 	then
-		echo "multiple files matched argument, aborting..."
-		return 1
+		IFS=$'\n' read -d '' -r -a TARGET_LINES < $(echo $TARGET)
+		select LINE in "${TARGET_LINES[@]}"; do
+			TARGET="$LINE"
+			break
+		done
 	elif [ $TARGET_HASH_LC -lt 1 ];
 	then
 		echo "no files matched argument"
@@ -106,7 +113,7 @@ then
 fi
 
 while [ "$#" -gt 0 ]; do
-	echo "current arg with $# args left: $1"
+#	echo "current arg with $# args left: $1"
 	case $1 in
 		-l|--log)
 			case $2 in
