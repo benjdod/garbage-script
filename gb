@@ -1,0 +1,87 @@
+#!/bin/bash
+
+GB_BASE_DIR="${HOME}/.gb"
+GB_TRASH_DIR="${GB_BASE_DIR}/trash"
+GB_LOGFILE="${GB_BASE_DIR}/gb.log"
+
+function print_log {
+	if [ -n "$1" ];
+	then
+		tail -n $1 $GB_LOGFILE
+	else
+		cat $GB_LOGFILE
+	fi
+}
+
+# TODO: add functionality to avoid filename collisions
+# e.g. `gb file.txt; touch file.txt; gb file.txt`
+# would step on the first version of file.txt
+#
+# would need an incremental scheme (f.txt, f-00001.txt)
+# or a hash-based solution with a map.
+# this would need to handle files with names of length
+# path_max
+
+function trash_single_file {
+
+	if [ ! -e $1 ];
+	then
+		echo "file or folder \"$1\" could not be found"
+		exit 1
+	fi
+
+	TARGET_FILE="$(realpath $1)"
+
+
+	echo "$(($(date +%s%N)/1000000)) $(whoami) $TARGET_FILE" >> "${GB_LOGFILE}"
+
+	mv $TARGET_FILE $GB_TRASH_DIR
+
+}
+
+########################################
+###### MAIN ARGUMENT HANDLING ##########
+########################################
+
+if [ "$#" -eq 0 ];
+then
+	echo "garbage v0.1"
+	echo "--help for more info"
+	exit 1
+fi
+
+while [ "$#" -gt 0 ]; do
+	case $1 in
+		-l|--log)
+			case $2 in
+				'')
+					print_log
+					exit 0
+					;;
+				*![0-9]*)
+					echo "invalid log print length"
+					exit 1
+					;;
+				*)
+					print_log $2
+					exit 0
+			esac
+			;;
+		-h|--help)
+			# TODO: implement
+			echo "not implemented"
+			exit 1
+			;;
+		-c|--config)
+			# TODO: print out config options
+			# adtl args to set config options
+			echo "not implemented"
+			exit 1
+			;;
+		*)
+			trash_single_file $1
+			shift
+			;;
+	esac
+done
+exit 0
