@@ -4,6 +4,9 @@ GB_BASE_DIR="${HOME}/.gb"
 GB_TRASH_DIR="${GB_BASE_DIR}/trash"
 GB_LOGFILE="${GB_BASE_DIR}/gb.log"
 
+mkdir -p $GB_TRASH_DIR
+touch $GB_LOGFILE
+
 LOG_LEVEL="DEBUG"
 
 function echo_debug {
@@ -15,7 +18,6 @@ function echo_debug {
 function print_log {
 
 	if [ ! -s $GB_LOGFILE ]; then
-		echo "empty."
 		return 1
 	fi
 
