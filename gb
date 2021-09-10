@@ -1,5 +1,10 @@
 #!/bin/bash
 
+#TODO: add permissions checking
+#TODO: add support for filenames with spaces in them
+#TODO: fix parsing to execute trash/restore after other options 
+# are processed (e.g. --quiet after a restore doesn't suppress info msgs);
+
 GB_BASE_DIR="${HOME}/.gb"
 GB_TRASH_DIR="${GB_BASE_DIR}/trash"
 GB_LOGFILE="${GB_BASE_DIR}/gb.log"
@@ -7,11 +12,27 @@ GB_LOGFILE="${GB_BASE_DIR}/gb.log"
 mkdir -p $GB_TRASH_DIR
 touch $GB_LOGFILE
 
-LOG_LEVEL="DEBUG"
+# error: 	3
+# warning: 	4
+# info: 	6
+# debug: 	7
+LOG_LEVEL=6
 
 function echo_debug {
-	if [ $LOG_LEVEL = "DEBUG" ]; then
+	if [ $LOG_LEVEL -ge 7 ]; then
 		echo $1
+	fi
+}
+
+function echo_info {
+	if [ $LOG_LEVEL -ge 6 ]; then
+		echo $1
+	fi
+}
+
+function echo_error {
+	if [ $LOG_LEVEL -ge 3 ]; then
+		echo "Error: $1"
 	fi
 }
 
@@ -33,14 +54,14 @@ function trash_single_file {
 
 	if [ ! -e $1 ];
 	then
-		echo "file or folder \"$1\" could not be found"
+		echo_error "file or folder \"$1\" could not be found"
 		exit 1
 	fi
 
 	if [ -d $1 ]; then
-		echo_debug "trashing directory $1"
+		echo_debug "trashing directory '$1'"
 	elif [ -f $1 ]; then
-		echo_debug "trashing file $1"
+		echo_debug "trashing file '$1'"
 	fi
 
 	TARGET_FILE="$(realpath $1)"
@@ -54,7 +75,7 @@ function trash_single_file {
 		fi
 	done
 
-	echo "$GB_FILE_HASH $(($(date +%s%N)/1000000)) $(whoami) $TARGET_FILE" >> "${GB_LOGFILE}"
+	echo "$GB_FILE_HASH $(date +%s) $(whoami) $TARGET_FILE" >> "${GB_LOGFILE}"
 
 	mv $TARGET_FILE "${GB_TRASH_DIR}/${GB_FILE_HASH}"
 }
@@ -62,33 +83,46 @@ function trash_single_file {
 function restore_single_file {
 	# find file hash
 
-	echo "restoring file $1"
+	echo_info "searching for file '$1'"
 
-	TARGET="$(cat $GB_LOGFILE | grep --color=none $(echo $1))"
-	TARGET_HASH="$(echo $TARGET | awk '{print $1}')"
-	TARGET_HASH_LC="$(echo $TARGET_HASH | wc -l)"
+	# FIXME: this will search the whole line of the log, not
+	# just the filename
+	SCAN="$(cat $GB_LOGFILE | grep --color=none $(echo $1))"
+	SCAN_LC="$(echo "$SCAN" | wc -l)"
 
-	if [ $TARGET_HASH_LC -gt 1 ];
+	if [ -z "$SCAN" ];
 	then
-		IFS=$'\n' read -d '' -r -a TARGET_LINES < $(echo $TARGET)
-		select LINE in "${TARGET_LINES[@]}"; do
-			TARGET="$LINE"
-			break
-		done
-	elif [ $TARGET_HASH_LC -lt 1 ];
-	then
-		echo "no files matched argument"
+		echo_error "no files matched argument"
 		return 1
 	fi
 
-	DEST_FILENAME="$(echo $TARGET | awk '{print $4}')"
-	echo_debug "found hash and file: "
+	IFS=$'\n' read -d '' -r -a TARGET_LINES <<< "$SCAN"
+	select LINE in "${TARGET_LINES[@]}"; do
+		TARGET="$LINE"
+		break
+	done
+
+	if [ -z "$TARGET" ];
+	then 
+		echo_error "invalid option"
+		return 1
+	fi
+
+	TARGET_HASH="$(echo "$TARGET" | awk '{print $1}')"
+
+	DEST_FILENAME="$(echo "$TARGET" | awk '{print $4}')"
 	echo_debug "target: $TARGET"
+	echo_debug "found hash and file: "
 	echo_debug "hash: $TARGET_HASH"
 	echo_debug "file: $DEST_FILENAME"
 
 	if [ ! -d "$(dirname $DEST_FILENAME)" ]; then
-		"directory for trashed file $DEST_FILENAME does not exist"
+		echo_error "directory for trashed file $DEST_FILENAME does not exist"
+		return 1
+	fi
+
+	if [ -e "$DEST_FILENAME" ]; then
+		echo_error "$DEST_FILENAME already exists, exiting"
 		return 1
 	fi
 
@@ -100,7 +134,7 @@ function restore_single_file {
 function empty_trash {
 	rm -r $GB_TRASH_DIR && mkdir -p $GB_TRASH_DIR
 	rm $GB_LOGFILE && touch $GB_LOGFILE
-	echo "emptied trash."
+	echo_info "emptied trash."
 }
 
 ########################################
@@ -117,14 +151,14 @@ fi
 while [ "$#" -gt 0 ]; do
 #	echo "current arg with $# args left: $1"
 	case $1 in
-		-l|--log)
+		-l|--list)
 			case $2 in
 				'')
 					print_log
 					exit 0
 					;;
 				*![0-9]*)
-					echo "invalid log print length"
+					echo_error "invalid list print length"
 					exit 1
 					;;
 				*)
@@ -143,11 +177,20 @@ while [ "$#" -gt 0 ]; do
 			echo "not implemented"
 			exit 1
 			;;
+		--debug)
+			LOG_LEVEL=7
+			;;
+		--quiet)
+			# set log level to ERROR 
+			LOG_LEVEL=3
+			;;
 		--empty)
 			read -p "Are you absolutely positively sure? (y/n) " -n 1 -r
 			case "$REPLY" in
 				y|Y|yes)
 					echo ""
+					# TODO: add a 3sec countdown with a sigint handler to give
+					# user time to think
 					empty_trash
 					exit 0
 					;;
