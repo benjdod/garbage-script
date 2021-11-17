@@ -172,10 +172,11 @@ while [ "$#" -gt 0 ]; do
 			exit 1
 			;;
 		-c|--config)
-			# TODO: print out config options
-			# adtl args to set config options
-			echo "not implemented"
-			exit 1
+			# TODO: adtl args to set config options
+			echo "gb directory:   $GB_BASE_DIR"
+			echo "gb trash:       $GB_TRASH_DIR"
+			echo "gb log:         $GB_LOGFILE"
+			exit 0
 			;;
 		--debug)
 			LOG_LEVEL=7
