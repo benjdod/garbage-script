@@ -8,8 +8,6 @@
 `gb --log 10`
 `gb --restore ~/important/file.txt`
 
-### TODO
+### Issues
 
-This is not a complete utility. Some things that need to be added, improved, or fixed are as follows:
- - Robust searching, viewing, and restoring of trashed files
- - Ensure that permissions are preserved in all cases
+This is not a complete utility. Items that need attention can be found in the script with the TODO prefix. 
